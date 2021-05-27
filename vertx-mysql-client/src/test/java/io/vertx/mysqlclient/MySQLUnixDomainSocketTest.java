@@ -18,6 +18,7 @@ import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.sqlclient.PoolOptions;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -28,6 +29,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assume.assumeTrue;
 
 @RunWith(VertxUnitRunner.class)
+@Ignore
 public class MySQLUnixDomainSocketTest extends MySQLTestBase {
 
   private static final String unixSocketFile = System.getProperty("unix.socket.file");
