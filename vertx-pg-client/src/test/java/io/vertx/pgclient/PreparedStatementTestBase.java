@@ -17,6 +17,7 @@
 
 package io.vertx.pgclient;
 
+import io.vertx.core.Context;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -28,6 +29,7 @@ import io.vertx.pgclient.data.*;
 import io.vertx.sqlclient.Cursor;
 import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowStream;
+import io.vertx.sqlclient.Transaction;
 import io.vertx.sqlclient.Tuple;
 import org.junit.After;
 import org.junit.Before;
@@ -36,10 +38,12 @@ import org.junit.Test;
 import java.lang.reflect.Array;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -247,6 +251,46 @@ public abstract class PreparedStatementTestBase extends PgTestBase {
               ctx.assertEquals(1, result.size());
               async.complete();
             }))));
+    }));
+  }
+
+  @Test
+  public void testStreamQuery(TestContext ctx) {
+    AtomicReference<Context> mainContextHolder = new AtomicReference<>(null);
+    AtomicReference<RowStream<Row>> streamHolder = new AtomicReference<>(null);
+    Async async = ctx.async();
+    vertx.periodicStream(1).handler(v -> {
+      if (mainContextHolder.get() != null && streamHolder.get() != null && Vertx.currentContext() != mainContextHolder.get()) {
+        streamHolder.get().fetch(1);
+      }
+    });
+    PgConnection.connect(vertx, options(), ctx.asyncAssertSuccess(conn -> {
+      Transaction tx = conn.begin();
+      conn.prepare("SELECT * FROM Fortune", ctx.asyncAssertSuccess(ps -> {
+        RowStream<Row> stream = ps.createStream(1000, Tuple.tuple());
+        List<Tuple> rows = new ArrayList<>();
+        AtomicInteger ended = new AtomicInteger();
+        stream.handler(tuple -> {
+          if (mainContextHolder.get() == null) {
+            mainContextHolder.set(Vertx.currentContext());
+            stream.pause();
+            streamHolder.set(stream);
+          }
+          ctx.assertEquals(0, ended.get());
+          rows.add(tuple);
+        });
+        stream.endHandler(v -> {
+          ctx.assertEquals(0, ended.getAndIncrement());
+          ctx.assertEquals(12, rows.size());
+          async.complete();
+          tx.commit();
+        });
+        stream.exceptionHandler(v -> {
+          ctx.fail(v.getMessage());
+          tx.commit();
+          async.complete();
+        });
+      }));
     }));
   }
 
